@@ -25,6 +25,7 @@ func (q *Question) String() string {
 
 type GODNSHandler struct {
 	resolver        *Resolver
+	binder          *BindFind
 	cache, negCache Cache
 	hosts           Hosts
 }
@@ -34,10 +35,12 @@ func NewHandler() *GODNSHandler {
 	var (
 		cacheConfig     CacheSettings
 		resolver        *Resolver
+        binder          *BindFind
 		cache, negCache Cache
 	)
 
 	resolver = NewResolver(settings.ResolvConfig)
+    binder = NewBindFind(settings.BindServer)
 
 	cacheConfig = settings.Cache
 	switch cacheConfig.Backend {
@@ -66,6 +69,17 @@ func NewHandler() *GODNSHandler {
 		negCache = NewRedisCache(
 			settings.Redis,
 			int64(cacheConfig.Expire/2))
+	case "bind":
+		cache = &MemoryCacheofbind{
+			Backend:  make(map[string]Mesg, cacheConfig.Maxcount),
+			Expire:   time.Duration(cacheConfig.Expire) * time.Second,
+			Maxcount: cacheConfig.Maxcount,
+		}
+		negCache = &MemoryCacheofbind{
+			Backend:  make(map[string]Mesg),
+			Expire:   time.Duration(cacheConfig.Expire) * time.Second / 2,
+			Maxcount: cacheConfig.Maxcount,
+		}
 	default:
 		logger.Error("Invalid cache backend %s", cacheConfig.Backend)
 		panic("Invalid cache backend")
@@ -76,7 +90,7 @@ func NewHandler() *GODNSHandler {
 		hosts = NewHosts(settings.Hosts, settings.Redis)
 	}
 
-	return &GODNSHandler{resolver, cache, negCache, hosts}
+	return &GODNSHandler{resolver, binder, cache, negCache, hosts}
 }
 
 func (h *GODNSHandler) do(Net string, w dns.ResponseWriter, req *dns.Msg) {
@@ -93,7 +107,7 @@ func (h *GODNSHandler) do(Net string, w dns.ResponseWriter, req *dns.Msg) {
 
 	IPQuery := h.isIPQuery(q)
 
-	// Query hosts
+	// Query hosts 从本地的hosts文件中查找
 	if settings.Hosts.Enable && IPQuery > 0 {
 		if ips, ok := h.hosts.Get(Q.qname, IPQuery); ok {
 			m := new(dns.Msg)
@@ -153,20 +167,42 @@ func (h *GODNSHandler) do(Net string, w dns.ResponseWriter, req *dns.Msg) {
 			return
 		}
 	}
+    var(
+        mesg * dns.Msg
+        err error
+        )
+    cacheConfig := settings.Cache
+    switch cacheConfig.Backend {
+    //这个地方是新增的向权威bind索取dns记录的过程
+    case "bind":
+        mesg, err = h.binder.Lookup(Net, req)
+        if err != nil {
+            logger.Warn("bind query error %s", err)
+            dns.HandleFailed(w, req)
 
-	mesg, err := h.resolver.Lookup(Net, req)
+            // cache the failure, too!
+            // 这个地方先不实现
 
-	if err != nil {
-		logger.Warn("Resolve query error %s", err)
-		dns.HandleFailed(w, req)
+           if err = h.negCache.Set(key, nil); err != nil {
+          logger.Warn("Set %s negative cache failed: %v", Q.String(), err)
+          }
+            return
+        }
+    default:
+        mesg, err = h.resolver.Lookup(Net, req)
 
-		// cache the failure, too!
-		if err = h.negCache.Set(key, nil); err != nil {
-			logger.Warn("Set %s negative cache failed: %v", Q.String(), err)
-		}
-		return
-	}
+        if err != nil {
+            logger.Warn("Resolve query error %s", err)
+            dns.HandleFailed(w, req)
 
+            // cache the failure, too!
+            if err = h.negCache.Set(key, nil); err != nil {
+                logger.Warn("Set %s negative cache failed: %v", Q.String(), err)
+            }
+            return
+        }
+
+    }
 	w.WriteMsg(mesg)
 
 	if IPQuery > 0 && len(mesg.Answer) > 0 {

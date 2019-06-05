@@ -56,6 +56,77 @@ type Cache interface {
 	Full() bool
 }
 
+
+//这是为cache for bind添加的新的数据结构
+type MemoryCacheofbind struct {
+	Backend  map[string]Mesg
+	Expire   time.Duration
+	Maxcount int
+	mu       sync.RWMutex
+}
+
+//dns查找优先从本地cache获取，未获得会向bind sever获取
+func (c *MemoryCacheofbind) Get(key string) (*dns.Msg, error) {
+	c.mu.RLock()
+	mesg, ok := c.Backend[key]
+	c.mu.RUnlock()
+	if !ok {
+		return nil, KeyNotFound{key}
+	}
+
+	if mesg.Expire.Before(time.Now()) {
+		c.Remove(key)
+		return nil, KeyExpired{key}
+	}
+
+	return mesg.Msg, nil
+
+}
+
+func (c *MemoryCacheofbind) Set(key string, msg *dns.Msg) error {
+	if c.Full() && !c.Exists(key) {
+		return CacheIsFull{}
+	}
+
+	expire := time.Now().Add(c.Expire)
+	mesg := Mesg{msg, expire}
+	c.mu.Lock()
+	c.Backend[key] = mesg
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *MemoryCacheofbind) Remove(key string) error {
+	c.mu.Lock()
+	delete(c.Backend, key)
+	c.mu.Unlock()
+	return nil
+}
+
+func (c *MemoryCacheofbind) Exists(key string) bool {
+	c.mu.RLock()
+	_, ok := c.Backend[key]
+	c.mu.RUnlock()
+	return ok
+}
+
+func (c *MemoryCacheofbind) Length() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.Backend)
+}
+
+func (c *MemoryCacheofbind) Full() bool {
+	// if Maxcount is zero. the cache will never be full.
+	if c.Maxcount == 0 {
+		return false
+	}
+	return c.Length() >= c.Maxcount
+}
+
+
+
+//这是原来的cache实现
 type MemoryCache struct {
 	Backend  map[string]Mesg
 	Expire   time.Duration

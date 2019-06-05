@@ -9,7 +9,8 @@ import (
 )
 
 var (
-	logger *GoDNSLogger
+	logger   *GoDNSLogger
+	cuntcpus int
 )
 
 func main() {
@@ -91,5 +92,7 @@ func initLogger() {
 }
 
 func init() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	cuntcpus = runtime.NumCPU()
+	runtime.GOMAXPROCS(cuntcpus)
+
 }

@@ -22,15 +22,16 @@ var LogLevelMap = map[string]int{
 }
 
 type Settings struct {
-	Version      string
-	Debug        bool
-	Server       DNSServerSettings `toml:"server"`
-	ResolvConfig ResolvSettings    `toml:"resolv"`
-	Redis        RedisSettings     `toml:"redis"`
-	Memcache     MemcacheSettings  `toml:"memcache"`
-	Log          LogSettings       `toml:"log"`
-	Cache        CacheSettings     `toml:"cache"`
-	Hosts        HostsSettings     `toml:"hosts"`
+    Version      string
+    Debug        bool
+    Server       DNSServerSettings `toml:"server"`
+    ResolvConfig ResolvSettings    `toml:"resolv"`
+    Redis        RedisSettings     `toml:"redis"`
+    Memcache     MemcacheSettings  `toml:"memcache"`
+    Log          LogSettings       `toml:"log"`
+    Cache        CacheSettings     `toml:"cache"`
+    Hosts        HostsSettings     `toml:"hosts"`
+    BindServer   BINDServerSettings `toml:"bindserver"`
 }
 
 type ResolvSettings struct {
@@ -44,6 +45,13 @@ type ResolvSettings struct {
 type DNSServerSettings struct {
 	Host string
 	Port int
+}
+type BINDServerSettings struct {
+	Host string
+	Port int
+	Timeout        int
+	Interval       int
+	SetEDNS0       bool
 }
 
 type RedisSettings struct {

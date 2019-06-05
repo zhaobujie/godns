@@ -39,9 +39,13 @@ func (s *Server) Run() {
 		Handler:      udpHandler,
 		UDPSize:      65535,
 		ReadTimeout:  s.rTimeout,
-		WriteTimeout: s.wTimeout}
+		WriteTimeout: s.wTimeout,
+		ReusePort:    true}
 
-	go s.start(udpServer)
+	for i := 1; i <= cuntcpus; i++ {
+		go s.start(udpServer)
+	}
+	//go s.start(udpServer)
 	go s.start(tcpServer)
 
 }
